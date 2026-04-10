@@ -1,6 +1,6 @@
 # mempalace-sync
 
-> Cross-machine sync for [MemPalace](https://github.com/milla-jovovich/mempalace) AI memory data. Git-based, multi-agent friendly, ~700 lines of Python.
+> Cross-machine sync for [MemPalace](https://github.com/milla-jovovich/mempalace) AI memory data. Two modes: lightweight git sync (v0.1, shipped) and a NyxID-powered multi-agent memory server (v0.2, designed).
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue)](#install)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -11,9 +11,25 @@
 
 But it's **local-only**. Switch laptops, switch from Mac to Linux, hand off to a teammate — you lose every bit of context you've built up.
 
-`mempalace-sync` is a thin wrapper that puts your MemPalace data dir under git control so it travels with you.
+`mempalace-sync` makes your MemPalace data travel with you. We support two architectures, and you can use whichever fits your situation.
 
-## How it works
+## Two modes — pick one (or both)
+
+| | **Mode A: Git Sync (v0.1)** | **Mode B: NyxID Gateway (v0.2)** |
+|---|---|---|
+| Status | ✅ Shipped | 🟡 Designed, stubs in tree |
+| How it works | Each machine has a copy, synced via git | One host, many remote clients via [NyxID](https://github.com/ChronoAIProject/NyxID) tunnel |
+| Source of truth | Last writer wins | Single host instance — no conflicts ever |
+| Real-time | No (push/pull) | Yes (writes immediately visible) |
+| Client install | MemPalace + git | Just an MCP config — no MemPalace locally |
+| Best for | Solo dev, occasional machine switches | Always-on home machine + multi-device daily, or team |
+| Setup time | 5 minutes | 15-30 minutes |
+
+**Don't know which to pick?** Start with Mode A. It's shipped, simple, works offline. When you have an always-on machine and want real-time multi-device, upgrade to Mode B (when v0.2 ships).
+
+Full architecture: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+## How Mode A works (v0.1, available now)
 
 ```
             ┌──────────── private git remote ────────────┐
@@ -105,9 +121,10 @@ Full details: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Roadmap
 
-- **v0.1** (now) — git backend, manual + hook-based sync, status command
-- **v0.2** — rclone backend (S3 / Dropbox / iCloud), webhook on push
-- **v0.3** — selective sync rules, conflict-resolution helpers, watch mode
+- **v0.1** (now) — Mode A: git backend, CLI, Claude Code SessionStart hook, 13 tests
+- **v0.2** — **Mode B: NyxID gateway + MCP server.** Per Auric (Chrono CEO)'s suggestion: run MemPalace on one always-on host, expose via mempalace-sync MCP server, route through `nyxid node` so any agent on any machine connects via NyxID with per-agent scoped tokens. No more last-writer-wins, no more push/pull discipline, real-time multi-device. Stubs already in `src/mempalace_sync/mcp_server.py` and `nyxid_backend.py`. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) Mode B for the full design.
+- **v0.3** — Hybrid: git fallback when host is offline, conflict-resolution helpers
+- **v0.4** — Team RBAC, selective sync rules, encryption-at-rest options
 
 ## Contributing
 
@@ -115,7 +132,9 @@ Issues and PRs welcome at [github.com/ChronoAIProject/mempalace-sync](https://gi
 
 ## Acknowledgments
 
-- [MemPalace](https://github.com/milla-jovovich/mempalace) by Milla Jovovich and Ben Sigman — the memory system this tool wraps.
+- **Auric Lo (Chrono AI CEO)** proposed the Mode B / NyxID architecture. It turns mempalace-sync from a backup tool into a multi-agent memory server. Credit where it's due.
+- [MemPalace](https://github.com/milla-jovovich/mempalace) by Milla Jovovich and Ben Sigman — the memory system this tool extends.
+- [NyxID](https://github.com/ChronoAIProject/NyxID) by Chrono AI — the agent connectivity gateway Mode B sits on top of.
 - [ChronoAIProject](https://github.com/ChronoAIProject) — the org this tool ships under.
 
 ## License

@@ -1,8 +1,32 @@
 # Architecture
 
-`mempalace-sync` is intentionally small. ~700 lines of Python wrapping `git`.
+`mempalace-sync` ships with **two operating modes** that solve the same problem at different complexity levels.
 
-## The data flow
+## The problem
+
+[MemPalace](https://github.com/milla-jovovich/mempalace) stores AI memory locally in `~/.mempalace/palace/` (ChromaDB + SQLite + filesystem). It exposes this via MCP so any agent (Claude Code, Codex, Cursor, Gemini CLI) can read from it.
+
+But it's local-only. Multiple machines = multiple disconnected memories.
+
+## Two solutions
+
+| | **Mode A: Git Sync** | **Mode B: NyxID Gateway** |
+|---|---|---|
+| **Status** | v0.1 — shipped | v0.2 — designed, in progress |
+| **Architecture** | Each machine has a full copy, synced via git | One host, many remote clients via NyxID tunnel |
+| **Source of truth** | Last writer wins | Single host instance |
+| **Real-time** | No (push/pull manually or via hook) | Yes (writes are immediately visible) |
+| **Client install** | MemPalace + mempalace-sync + git remote | Just NyxID MCP config — no local MemPalace |
+| **Conflict handling** | git merge (binary files = pain) | Doesn't exist — single writer |
+| **Setup complexity** | 5 minutes | 15-30 minutes (NyxID node + token + tunnel) |
+| **Best for** | Solo dev, occasional machine switches | Always-on home machine + multi-device daily use, or team |
+| **Network requirement** | Just git access | Always-online host + NyxID gateway access |
+
+You can run both. Mode A is the fallback when the host is offline.
+
+---
+
+## Mode A: Git Sync (v0.1)
 
 ```
                 ┌─────────────────────────┐
@@ -23,7 +47,7 @@
    │  + filesystem        │   │  + filesystem        │
    └──────────┬───────────┘   └──────────┬───────────┘
               │                          │
-              │ MCP                      │ MCP
+              │ MCP (local)              │ MCP (local)
               ▼                          ▼
    ┌──────────────────────┐   ┌──────────────────────┐
    │  Claude / Codex /    │   │  Claude / Codex /    │
@@ -31,42 +55,108 @@
    └──────────────────────┘   └──────────────────────┘
 ```
 
-The trick: MemPalace exposes memory via MCP, so **any** MCP-compatible agent reads from the same directory. Sync the directory once, every agent benefits.
+**How it works**:
+1. The MemPalace data dir is wrapped in a git repo
+2. `mempalace-sync push` commits and pushes
+3. `mempalace-sync pull` rebases from remote
+4. A Claude Code SessionStart hook can auto-pull
+5. Each machine reads MemPalace locally — agents are unaware of sync
 
-## Design decisions
+**Trade-offs**:
+- ✅ Simple, reliable, offline-friendly
+- ✅ No always-on infrastructure required
+- ❌ Manual sync discipline needed
+- ❌ ChromaDB binary files don't merge well — last writer wins
+- ❌ Clients must install MemPalace + Python
 
-### Why git, not S3 or rclone
+---
 
-Every developer already has git. Zero new dependencies. SSH keys for private repos already work. Conflict resolution is handled by git itself. We can swap to rclone in v0.2 if users complain about binary file diffs.
+## Mode B: NyxID Gateway (v0.2 — designed)
 
-### Why no merge magic
+This is the architecture [Auric (Chrono CEO)](https://github.com/loning) suggested. It treats MemPalace as a service rather than a synced file tree.
 
-ChromaDB and SQLite store binary files that don't merge cleanly. For a single user with multiple machines, **last-writer-wins** is correct 99% of the time. The other 1% is manual resolution. Trying to be clever here introduces more bugs than it solves.
+```
+                    ┌──────────────── Memory Host (e.g. 4060) ────────────────┐
+                    │                                                          │
+                    │   MemPalace (localhost:8765)                            │
+                    │        ↑                                                 │
+                    │   mempalace-sync (host mode)                            │
+                    │        - thin REST/MCP wrapper                           │
+                    │        - exposes /memory/search /memory/status etc.     │
+                    │        ↑                                                 │
+                    │   nyxid node                                             │
+                    │        - NAT traversal                                   │
+                    │        - per-agent token issuance                        │
+                    │        ↓                                                 │
+                    └────────┼────────────────────────────────────────────────┘
+                             │
+                             │ encrypted tunnel
+                             ▼
+                    ┌──────────────────────────────────┐
+                    │  NyxID Cloud Gateway             │
+                    │  - per-agent scoped tokens       │
+                    │  - MCP routing                   │
+                    │  - revocable sessions            │
+                    └──────────┬─────────────┬─────────┘
+                               │             │
+                               │             │
+              ┌────────────────┘             └────────────────┐
+              │                                                │
+              ▼                                                ▼
+   ┌──────────────────────┐                       ┌──────────────────────┐
+   │  Mac (client)        │                       │  Linux (client)      │
+   │                      │                       │                      │
+   │  Claude Code         │                       │  Codex / Cursor      │
+   │  └─ MCP config       │                       │  └─ MCP config       │
+   │     points at NyxID  │                       │     points at NyxID  │
+   │                      │                       │                      │
+   │  No MemPalace        │                       │  No MemPalace        │
+   │  No local data       │                       │  No local data       │
+   └──────────────────────┘                       └──────────────────────┘
+```
 
-### Why MemPalace data dir, not the whole `~/.mempalace`
+**How it works**:
+1. **One machine** (your always-on host — laptop, 4060, NAS, whatever) runs MemPalace + mempalace-sync in `host` mode
+2. **`nyxid node`** runs on the same machine and exposes mempalace-sync's MCP endpoint to the NyxID cloud gateway
+3. **Other machines** configure their AI clients (Claude Code / Codex / Cursor / Gemini) to use the NyxID-issued MCP endpoint
+4. Every agent on every machine sees the SAME memory in real-time
+5. NyxID gives each agent its own scoped token — you can revoke any device without affecting the others
 
-`~/.mempalace/` may contain logs, cache, lock files, and per-machine state that should NOT sync. The `palace/` subdirectory is the actual data. We sync only that.
+**Trade-offs**:
+- ✅ Single source of truth (no conflicts ever)
+- ✅ Real-time updates across all machines
+- ✅ Clients don't install MemPalace at all
+- ✅ Per-agent isolation and revocation built-in
+- ✅ Works for teams (multiple humans sharing one memory pool, with access control)
+- ❌ Requires an always-on host (or accept memory is offline when host sleeps)
+- ❌ More setup steps (NyxID node + tunnel + per-client MCP config)
 
-### Why a Claude Code SessionStart hook
+### Why NyxID specifically
 
-Most users forget to pull. The hook makes pull-on-start automatic so a fresh terminal on a fresh machine always has the latest memory before any agent reads from MemPalace.
+[NyxID](https://github.com/ChronoAIProject/NyxID) is Chrono's open-source Agent Connectivity Gateway. It already solves:
 
-### Why subprocess git, not GitPython
+| Problem | NyxID's solution |
+|---------|------------------|
+| Make a localhost service reachable from another network | `nyxid node` (NAT traversal, no port forwarding) |
+| Don't expose raw credentials to agents | Reverse proxy with credential injection |
+| Wrap a REST API as MCP tools | `nyxid mcp config --tool cursor` |
+| Per-agent access scoping and revocation | Built-in OIDC + scoped tokens |
 
-GitPython adds binary deps, slower install, and we only use 5 commands (init, fetch, pull, commit, push). Subprocess is cleaner and works on every machine that has git already.
+mempalace-sync host mode is a perfect use case — it's a localhost service (the MemPalace MCP wrapper) that needs to be reachable from other machines, without burning real credentials and without the user setting up Cloudflare tunnels.
 
-### What's NOT in v0.1
+### Why this beats "just use Cloudflare Tunnel + bare MemPalace"
 
-- Web UI
-- Multi-user team merge resolution
-- Automated cron schedules (the hook is enough for now)
-- Remote backends other than git
-- Encryption (use SSH + private repo for now)
-- Selective sync (rules about which files to skip)
+| Concern | Cloudflare Tunnel | NyxID |
+|---------|-------------------|-------|
+| NAT traversal | ✅ | ✅ |
+| Per-agent token isolation | ❌ | ✅ |
+| Auto MCP config generation | ❌ | ✅ |
+| Open source | ❌ | ✅ |
+| Built for AI agents specifically | ❌ | ✅ |
 
-These are real ideas. They live in `ROADMAP.md` after the project finds users.
+---
 
-## File map
+## Component map
 
 ```
 mempalace-sync/
@@ -74,19 +164,36 @@ mempalace-sync/
 ├── LICENSE
 ├── pyproject.toml
 ├── src/mempalace_sync/
-│   ├── __init__.py        # __version__
-│   ├── paths.py           # Resolve MemPalace data dir
-│   ├── config.py          # ~/.config/mempalace-sync/config.yaml
-│   ├── git_backend.py     # subprocess git wrapper, GitStatus, GitError
-│   ├── hook.py            # Claude Code SessionStart hook install/uninstall
-│   └── cli.py             # Click CLI: init, pull, push, status, hook, config
+│   ├── __init__.py             # __version__
+│   ├── paths.py                # Resolve MemPalace data dir
+│   ├── config.py               # ~/.config/mempalace-sync/config.yaml
+│   ├── git_backend.py          # [Mode A] subprocess git wrapper
+│   ├── hook.py                 # [Mode A] Claude Code SessionStart hook
+│   ├── cli.py                  # CLI: init, pull, push, status, hook, config (and v0.2: host, client)
+│   ├── mcp_server.py           # [Mode B - stub] MCP server for host mode
+│   └── nyxid_backend.py        # [Mode B - stub] NyxID node integration
 ├── claude-skill/.claude/skills/memsync/
-│   └── SKILL.md           # Claude Code skill definition
+│   └── SKILL.md                # Claude Code skill definition
 ├── scripts/
-│   └── install-skill.sh   # Copy skill into ~/.claude/skills/memsync/
+│   └── install-skill.sh        # Copy skill into ~/.claude/skills/memsync/
 ├── tests/
-│   ├── test_paths.py      # Resolution rules
-│   └── test_git_backend.py # Real-git integration tests
+│   ├── test_paths.py           # Resolution rules
+│   └── test_git_backend.py     # Real-git integration tests (8 cases)
 └── docs/
-    └── ARCHITECTURE.md    # This file
+    └── ARCHITECTURE.md         # This file
 ```
+
+## Roadmap
+
+| Version | Theme | Status |
+|---------|-------|--------|
+| **v0.1** | Mode A — git sync, CLI, hook, tests, docs | ✅ Shipped |
+| **v0.2** | Mode B — NyxID + MCP server, host mode, client mode, setup wizard | 🟡 Designed, stubs in tree |
+| **v0.3** | Hybrid mode (git fallback when host offline), conflict-resolution helpers | 📋 Planned |
+| **v0.4** | Selective sync rules, encryption-at-rest options, team RBAC | 📋 Planned |
+
+## Acknowledgments
+
+- The Mode B / NyxID architecture is **Auric Lo (Chrono AI CEO)'s suggestion**. It turns mempalace-sync from a backup tool into a multi-agent memory server. Credit where it's due.
+- [MemPalace](https://github.com/milla-jovovich/mempalace) by Milla Jovovich and Ben Sigman — the memory system this tool extends.
+- [NyxID](https://github.com/ChronoAIProject/NyxID) by Chrono AI — the agent connectivity gateway Mode B sits on top of.
