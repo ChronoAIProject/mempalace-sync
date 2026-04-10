@@ -68,4 +68,4 @@ You only sync once. Every agent on every machine sees the same memory.
 
 ## Repo
 
-[github.com/aevatarAI/mempalace-sync](https://github.com/aevatarAI/mempalace-sync)
+[github.com/ChronoAIProject/mempalace-sync](https://github.com/ChronoAIProject/mempalace-sync)

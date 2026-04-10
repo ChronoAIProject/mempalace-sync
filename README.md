@@ -82,7 +82,7 @@ You sync the data once. The agents take care of the rest.
 If you use Claude Code, install the bundled skill:
 
 ```bash
-git clone https://github.com/aevatarAI/mempalace-sync
+git clone https://github.com/ChronoAIProject/mempalace-sync
 cd mempalace-sync
 ./scripts/install-skill.sh
 ```
@@ -111,12 +111,12 @@ Full details: [ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
 ## Contributing
 
-Issues and PRs welcome at [github.com/aevatarAI/mempalace-sync](https://github.com/aevatarAI/mempalace-sync).
+Issues and PRs welcome at [github.com/ChronoAIProject/mempalace-sync](https://github.com/ChronoAIProject/mempalace-sync).
 
 ## Acknowledgments
 
 - [MemPalace](https://github.com/milla-jovovich/mempalace) by Milla Jovovich and Ben Sigman — the memory system this tool wraps.
-- [aevatarAI](https://github.com/aevatarAI) — the agent infrastructure org this tool ships under.
+- [ChronoAIProject](https://github.com/ChronoAIProject) — the org this tool ships under.
 
 ## License
 

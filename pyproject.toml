@@ -36,9 +36,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/aevatarAI/mempalace-sync"
-Issues = "https://github.com/aevatarAI/mempalace-sync/issues"
-Repository = "https://github.com/aevatarAI/mempalace-sync"
+Homepage = "https://github.com/ChronoAIProject/mempalace-sync"
+Issues = "https://github.com/ChronoAIProject/mempalace-sync/issues"
+Repository = "https://github.com/ChronoAIProject/mempalace-sync"
 
 [project.scripts]
 mempalace-sync = "mempalace_sync.cli:main"
