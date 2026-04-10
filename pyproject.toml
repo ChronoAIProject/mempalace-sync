@@ -1,0 +1,47 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "mempalace-sync"
+version = "0.1.0"
+description = "Cross-machine sync for MemPalace AI memory data"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+authors = [
+    { name = "AlyciaBHZ", email = "50111876+AlyciaBHZ@users.noreply.github.com" }
+]
+keywords = ["mempalace", "ai-memory", "claude", "agent", "sync", "rag"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries",
+]
+dependencies = [
+    "click>=8.1",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-mock>=3.10",
+]
+
+[project.urls]
+Homepage = "https://github.com/aevatarAI/mempalace-sync"
+Issues = "https://github.com/aevatarAI/mempalace-sync/issues"
+Repository = "https://github.com/aevatarAI/mempalace-sync"
+
+[project.scripts]
+mempalace-sync = "mempalace_sync.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/mempalace_sync"]
